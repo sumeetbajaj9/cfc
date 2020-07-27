@@ -1,0 +1,154 @@
+1. Purpose: For creation of Year, Month, Day, Hour nodes 
+			and establishing the CONTAINS relationship between the nodes.
+
+	Query:	WITH range(2019,2020) AS years, range(1,12) AS months,range(00,23) as hours
+			FOREACH(year IN years |
+			  CREATE (y:Year {value: year})
+			  FOREACH(month IN months |
+				CREATE (m:Month {value: month})
+				MERGE (y)-[:CONTAINS]->(m)
+				FOREACH(day IN (CASE
+								  WHEN month IN [1,3,5,7,8,10,12] THEN range(1,31)
+								  WHEN month = 2 THEN
+									CASE
+									  WHEN year % 4 <> 0 THEN range(1,28)
+									  WHEN year % 100 = 0 AND year % 400 = 0 THEN range(1,29)
+									  ELSE range(1,28)
+									END
+								  ELSE range(1,30)
+								END) |
+				  CREATE (d:Day {value: day})
+				  FOREACH(hour in hours |
+				  CREATE(h:Hour{value:hour})
+					MERGE(d)-[:CONTAINS]->(h))
+				  MERGE (m)-[:CONTAINS]->(d))))
+
+2. Purpose: For creating the NEXT relationship between Years	  
+	QUERY:		MATCH (year:Year)
+				WITH year
+				ORDER BY year.value
+				WITH collect(year) AS years
+				FOREACH(i in RANGE(0, length(years)-2) |
+					FOREACH(year1 in [years[i]] |
+						FOREACH(year2 in [years[i+1]] |
+							CREATE UNIQUE (year1)-[:NEXT]->(year2))));
+
+3. Purpose: For creating the NEXT relationship between Months	  
+	Query:	MATCH (year:Year)-[:CONTAINS]->(month)
+			WITH year, month
+			ORDER BY year.value, month.value
+			WITH collect(month) AS months
+			FOREACH(i in RANGE(0, length(months)-2) |
+				FOREACH(month1 in [months[i]] |
+					FOREACH(month2 in [months[i+1]] |
+						CREATE UNIQUE (month1)-[:NEXT]->(month2))));
+			
+4. Purpose: For creating the NEXT relationship between Days	  			
+	Query:	MATCH (year:Year)-[:CONTAINS]->(month)-[:CONTAINS]->(day)
+			WITH year, month, day
+			ORDER BY year.value, month.value, day.value
+			WITH collect(day) AS days
+			FOREACH(i in RANGE(0, length(days)-2) |
+				FOREACH(day1 in [days[i]] |
+					FOREACH(day2 in [days[i+1]] |
+						CREATE UNIQUE (day1)-[:NEXT]->(day2))));
+
+5.Purpose: Query for creating the NEXT relationship between Hours	  			
+	Query:	MATCH (year:Year)-[:CONTAINS]->(month)-[:CONTAINS]->(day)-[:CONTAINS]->(hour)
+			WITH year, month, day,hour
+			ORDER BY year.value, month.value, day.value,hour.value
+			WITH collect(hour) AS hours
+			FOREACH(i in RANGE(0, length(hours)-2) |
+				FOREACH(hour1 in [hours[i]] |
+					FOREACH(hour2 in [hours[i+1]] |
+						CREATE UNIQUE (hour1)-[:NEXT]->(hour2))));
+
+6. Purpose: For creating a unique identification ID on time series nodes
+	Query:	MATCH(year:Year)
+			WITH collect(year) AS years UNWIND years AS y
+				SET y.uuid = toString(y.value)
+				WITH y
+				MATCH (y)-[:CONTAINS]->(month:Month)
+				WITH y, collect(month) AS months UNWIND months AS m
+					SET m.uuid = m.value + '/' + y.value
+					WITH y, m
+					MATCH (m)-[:CONTAINS]->(day:Day)
+					WITH y, m, collect(day) AS days UNWIND days AS d
+						SET d.uuid = d.value + '/' + m.value + '/' + y.value
+						WITH y,m,d
+						MATCH (d)-[:CONTAINS]->(hour:Hour)
+						WITH y,m,d,collect(hour) as hours UNWIND hours as h
+							SET h.uuid=d.value + '/' + m.value + '/' + y.value +' '+h.value
+
+7. Purpose: For creating A Person with pid=P1  
+	Query:	MERGE(P:Person{pid:"P1",status:'safe'}) RETURN P
+
+8. Purpose: For storing the geolocation co-ordinates of the Person with PID=P1 AT 
+	3 AM on  21st January 2020
+	Query:	MATCH(P:Person{pid:"P1"}),(H:Hour{uuid:'21/1/2020 3'})
+			MERGE (P)-[r:AT{location:point({latitude:19.110567,longitude:74.735886})}]->(H)
+
+9. Purpose: for finding out the people who have been infected because of P1 on 
+	3 AM on  21st January 2020 WITHIN 1KM
+	Node Representation:
+	
+	Query:	MATCH(P:Person{pid:"P1"}),(OP:Person),(H:Hour{uuid:'21/1/2020 3'}),(D:Day),(M:Month),(Y:Year),
+			(P)-[r1:AT]->(H)<-[r2:AT]-(OP),(H)<-[:CONTAINS]-(D)<-[:CONTAINS]-(M)<-[:CONTAINS]-(Y)
+			WHERE distance(r1.location,r2.location)<1000
+			RETURN P,OP, H,D,M,Y	
+	
+	Tabular format:
+	
+	Query:	MATCH(P:Person{pid:"P1"}),(OP:Person),(H:Hour{uuid:'21/1/2020 3'}),(D:Day),(M:Month),(Y:Year),
+			(P)-[r1:AT]->(H)<-[r2:AT]-(OP),(H)<-[:CONTAINS]-(D)<-[:CONTAINS]-(M)<-[:CONTAINS]-(Y)
+			WHERE distance(r1.location,r2.location)<1000
+			RETURN P.pid as InfectedPerson,OP.pid as NearbyPeople,distance(r1.location,r2.location) as Distance, 
+			H.value as TIME,D.value as Day,M.value as Month,Y.value as Year
+
+10. Purpose:for Finding all the infected people because of P1:
+
+	Node Representation:
+
+	Query:	MATCH(P:Person{pid:"P1"}),(OP:Person),(H:Hour),(D:Day),(M:Month),(Y:Year),
+			(P)-[r1:AT]->(H)<-[r2:AT]-(OP),(H)<-[:CONTAINS]-(D)<-[:CONTAINS]-(M)<-[:CONTAINS]-(Y)
+			WHERE distance(r1.location,r2.location)<1000
+			RETURN P,OP, H,D,M,Y
+
+	Tabular Representation:
+
+	Query	MATCH(P:Person{pid:"P1"}),(OP:Person),(H:Hour),(D:Day),(M:Month),(Y:Year),(P)-[r1:AT]->(H)<-[r2:AT]-(OP),
+			(H)<-[:CONTAINS]-(D)<-[:CONTAINS]-(M)<-[:CONTAINS]-(Y)
+			WHERE distance(r1.location,r2.location)<1000
+			RETURN P.pid as InfectedPerson,OP.pid as NearbyPeople,
+			distance(r1.location,r2.location) as Distance, H.value as TIME,D.value as Day,M.value as Month
+			,Y.value as Year
+						
+11.	Purpose:Tracing out the people 4 days back from 21 January 2020
+
+	Node Representation:
+	
+	Query:MATCH(P:Person{pid:"P1"}),(OP:Person),(H:Hour),(D:Day),(M:Month),(Y:Year),
+		  (P)-[r1:AT]->(H),(OP)-[r2:AT]->(H),(:Day{uuid:"21/1/2020"})<-[:NEXT*0..4]-(D)<-[:CONTAINS]-(M)<-[:CONTAINS]-(Y),
+		  (D)-[:CONTAINS]-(H)
+		   WHERE distance(r1.location,r2.location)<1000 
+		   RETURN P,OP,H,D,M,Y
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,26 @@
+<div class="main-content">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header card-header-danger">
+                        <h4 class="card-title">Map View</h4>
+                    </div>
+                    <div class="card-body">
+                        <button mat-raised-button  class="btn btn-warning pull-left" (click)="HeatMapLoad()" >Show Heat Map</button>
+                        <br/>
+                        <br/>
+                        <br/>
+                        <div class='quakeInfo' [hidden]="Show">
+                            <div><strong>State:</strong>{{state}}</div>
+                            <div><strong>Infected People Count:</strong>{{count}}</div>
+                          </div>
+                        <div  class="map" id="map" class="match-parent"></div>
+                        
+                    </div>
+                </div>
+            </div>
+          </div>
+   
+    </div>
+  </div>
